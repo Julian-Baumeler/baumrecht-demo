@@ -3,79 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Baumrecht — Demo für BimParts</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <title>Baumrecht — 4-Klick-Demo</title>
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
-  <div id="banner"></div>
-  <aside>
+  <header class="top">
     <div class="brand">
       <div class="mark">B</div>
       <div>
         <strong>Baumrecht</strong>
-        <span>DACH-Prototyp · Simulation</span>
+        <span>Prototyp für BimParts · Simulation</span>
       </div>
     </div>
-    <nav>
-      <button data-view="search" class="on">Ort</button>
-      <button data-view="demo">Demo-Verordnung</button>
-      <button data-view="queue">Prüfen <em id="badge-queue">0</em></button>
-      <button data-view="sources">Quellen</button>
-      <button data-view="versions">Versionen</button>
-    </nav>
-    <div class="aside-foot">
-      <button id="btn-update" class="primary">Aktualisieren</button>
-      <p id="update-status">Bereit. Aktualisieren simuliert einen Abgleich — keine Amtsseiten werden geladen.</p>
-    </div>
-  </aside>
-  <main>
-    <section id="view-search" class="view on">
-      <header class="hero">
-        <p class="kicker">Prototyp · DE · CH · AT</p>
-        <h1>Welches Baumrecht gilt an diesem Ort?</h1>
-        <p class="lead">Vier fertige Location-Packs zum Durchklicken. Das Änderungs-Spiel passiert in der Demo-Verordnung.</p>
-        <div class="quick" id="quick"></div>
-        <input id="q" type="search" placeholder="Zürich, Wien, München, Musterhausen …" />
-        <div id="suggest" class="suggest"></div>
-      </header>
-      <div id="map"></div>
-      <div id="pack"></div>
-    </section>
+    <ol class="steps" id="steps"></ol>
+    <button class="ghost" id="btn-reset" type="button">Von vorn</button>
+  </header>
 
-    <section id="view-demo" class="view">
-      <h2>Demo-Verordnung Musterhausen</h2>
-      <p class="lead">Kein GitHub, kein Scraper. Text hier ändern (oder die Beispiel-Novelle einspielen), dann <strong>Aktualisieren</strong>. Die «KI» ist eine Simulation aus dem Diff.</p>
-      <div class="actions" style="margin: 0 0 12px">
-        <button class="btn" id="btn-novelle">Beispiel-Novelle einspielen (4 Zahlen)</button>
-        <button class="btn" id="btn-reset">Text zurücksetzen</button>
-      </div>
-      <textarea id="ordinance" spellcheck="false"></textarea>
-      <p class="meta" id="ord-meta"></p>
-    </section>
-
-    <section id="view-queue" class="view">
-      <h2>Vorschläge zur Freigabe</h2>
-      <p class="lead">Nichts wird current, bevor du es genehmigst — wie später mit echter Extraktion.</p>
-      <div id="queue"></div>
-    </section>
-
-    <section id="view-sources" class="view">
-      <h2>Quellenkatalog (statisch)</h2>
-      <p class="lead">Showcase-Register, keine Live-Fetches. Paywalled Normen sind nur zitiert.</p>
-      <div class="filters">
-        <select id="f-country"><option value="">Alle Länder</option><option>DE</option><option>CH</option><option>AT</option></select>
-        <input id="f-q" type="search" placeholder="Filter…" />
-      </div>
-      <div id="sources"></div>
-    </section>
-
-    <section id="view-versions" class="view">
-      <h2>Versionen Musterhausen</h2>
-      <div id="changelog"></div>
-    </section>
-  </main>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <main id="app"></main>
   <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
