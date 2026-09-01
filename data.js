@@ -1,5 +1,4 @@
 window.BAUMRECHT = {
-  "banner": "Klickbarer Prototyp für BimParts — keine Live-Abfrage von Amtsseiten. Alles simuliert, damit ihr den Ablauf kommentieren könnt.",
   "places": [
     {
       "slug": "musterhausen",
