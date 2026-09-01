@@ -64,6 +64,14 @@ h2 { font-family: var(--serif); font-weight: 500; margin: 0 0 8px; }
 }
 .hl { background: #dbe7ff; padding: 0 3px; border-radius: 3px; }
 .nav { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+.sticky-nav {
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  margin: 16px 0 28px;
+  padding: 10px 0;
+  background: linear-gradient(to top, #fff 70%, rgba(255,255,255,0));
+}
 .meta { color: var(--muted); font-size: 13px; }
 .progress { height: 8px; background: #edf2ff; border-radius: 99px; overflow: hidden; margin: 12px 0; }
 .progress > i { display: block; height: 100%; background: var(--blue); width: 0; transition: width .2s; }
