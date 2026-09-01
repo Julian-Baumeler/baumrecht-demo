@@ -1,33 +1,14 @@
 const D = window.BAUMRECHT;
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const STORE = "baumrecht-demo-v1";
+const STORE = "baumrecht-demo-v3";
+const STEPS = [
+  { id: 1, label: "1 · Idee" },
+  { id: 2, label: "2 · JSON heute" },
+  { id: 3, label: "3 · Text ändert" },
+  { id: 4, label: "4 · Prüfen" },
+  { id: 5, label: "5 · JSON danach" },
+];
 
-const state = loadState();
-
-function loadState() {
-  const fresh = {
-    ordinanceText: D.ordinance.text,
-    approvedText: D.ordinance.text,
-    approvedParams: parseParams(D.ordinance.text),
-    version: 1,
-    versions: [{ n: 1, at: new Date().toISOString(), params: parseParams(D.ordinance.text), text: D.ordinance.text, note: "Startfassung (simuliert)" }],
-    proposals: [],
-    changelog: [{ at: new Date().toISOString(), type: "seed", note: "Demo geladen" }],
-  };
-  try {
-    const raw = localStorage.getItem(STORE);
-    if (!raw) return fresh;
-    const s = JSON.parse(raw);
-    if (!s.approvedText) s.approvedText = D.ordinance.text;
-    return s;
-  } catch {
-    return fresh;
-  }
-}
-function save() {
-  localStorage.setItem(STORE, JSON.stringify(state));
-}
+const $app = document.getElementById("app");
 
 function parseParams(text) {
   const t = text.replace(/\u00a0/g, " ");
@@ -54,7 +35,7 @@ function parseParams(text) {
 
 function fmt(key, val) {
   if (val == null || val === "") return "—";
-  if (key.endsWith("_m")) return val + " m";
+  if (key.endsWith("_m")) return String(val).replace(".", ",") + " m";
   if (key.endsWith("_cm")) return val + " cm";
   if (key === "replacement_ratio") return val === 1 ? "1:1" : val + ":1";
   if (key === "felling_permit_required") return val ? "ja" : "nein";
@@ -63,20 +44,9 @@ function fmt(key, val) {
 }
 
 function paramDiff(a, b) {
-  const keys = [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])];
-  const out = [];
-  for (const k of keys) {
-    if (JSON.stringify(a[k]) !== JSON.stringify(b[k]) && (a[k] != null || b[k] != null)) {
-      out.push({ key: k, from: a[k], to: b[k] });
-    }
-  }
-  return out;
-}
-
-function hashText(t) {
-  let h = 0;
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
-  return String(h);
+  return Object.keys({ ...a, ...b })
+    .filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]) && (a[k] != null || b[k] != null))
+    .map((k) => ({ key: k, from: a[k], to: b[k] }));
 }
 
 function esc(s) {
@@ -87,15 +57,10 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
-function fmtDe(key, val) {
-  return fmt(key, val).replace(".", ",");
-}
-
 function splitLines(t) {
   return String(t || "").replace(/\r\n/g, "\n").split("\n");
 }
 
-/** Line diff via LCS (texts are short). */
 function lineOps(oldT, newT) {
   const a = splitLines(oldT);
   const b = splitLines(newT);
@@ -116,11 +81,9 @@ function lineOps(oldT, newT) {
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      ops.push({ op: "del", text: a[i] });
-      i++;
+      ops.push({ op: "del", text: a[i++] });
     } else {
-      ops.push({ op: "add", text: b[j] });
-      j++;
+      ops.push({ op: "add", text: b[j++] });
     }
   }
   while (i < n) ops.push({ op: "del", text: a[i++] });
@@ -151,11 +114,9 @@ function inlineMarkup(oldLine, newLine) {
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      del.push(`<mark class="tok-del">${esc(a[i])}</mark>`);
-      i++;
+      del.push(`<mark class="tok-del">${esc(a[i++])}</mark>`);
     } else {
-      add.push(`<mark class="tok-add">${esc(b[j])}</mark>`);
-      j++;
+      add.push(`<mark class="tok-add">${esc(b[j++])}</mark>`);
     }
   }
   while (i < n) del.push(`<mark class="tok-del">${esc(a[i++])}</mark>`);
@@ -163,418 +124,304 @@ function inlineMarkup(oldLine, newLine) {
   return { del: del.join(""), add: add.join("") };
 }
 
-function docHunks(oldT, newT) {
-  const ops = lineOps(oldT, newT);
-  const hunks = [];
-  let buf = [];
-  const flush = () => {
-    if (buf.some((x) => x.op !== "eq")) hunks.push(buf);
-    buf = [];
-  };
-  for (let k = 0; k < ops.length; k++) {
-    const o = ops[k];
-    if (o.op === "eq") {
-      const nearby = (ops[k - 1] && ops[k - 1].op !== "eq") || (ops[k + 1] && ops[k + 1].op !== "eq");
-      if (nearby) buf.push(o);
-      else flush();
-    } else {
-      buf.push(o);
-    }
-  }
-  flush();
-  return hunks;
-}
-
 function renderCodediff(oldT, newT) {
-  const hunks = docHunks(oldT, newT);
-  if (!hunks.length) return "";
-  const html = hunks
-    .map((hunk) => {
-      const rows = [];
-      for (let i = 0; i < hunk.length; i++) {
-        const o = hunk[i];
-        if (o.op === "eq") {
-          rows.push(`<div class="diff-ctx">  ${esc(o.text)}</div>`);
-          continue;
-        }
-        if (o.op === "del" && hunk[i + 1] && hunk[i + 1].op === "add") {
-          const mark = inlineMarkup(o.text, hunk[i + 1].text);
-          rows.push(`<div class="diff-del">- ${mark.del}</div>`);
-          rows.push(`<div class="diff-add">+ ${mark.add}</div>`);
-          i++;
-          continue;
-        }
-        if (o.op === "del") rows.push(`<div class="diff-del">- ${esc(o.text)}</div>`);
-        if (o.op === "add") rows.push(`<div class="diff-add">+ ${esc(o.text)}</div>`);
+  const ops = lineOps(oldT, newT);
+  const rows = [];
+  for (let i = 0; i < ops.length; i++) {
+    const o = ops[i];
+    if (o.op === "eq") {
+      if ((ops[i - 1] && ops[i - 1].op !== "eq") || (ops[i + 1] && ops[i + 1].op !== "eq")) {
+        rows.push(`<div class="diff-ctx">  ${esc(o.text)}</div>`);
       }
-      return `<div class="diff-hunk">${rows.join("")}</div>`;
-    })
-    .join("");
-  return `<div class="codediff" aria-label="Dokument-Diff">${html}</div>`;
+      continue;
+    }
+    if (o.op === "del" && ops[i + 1] && ops[i + 1].op === "add") {
+      const mark = inlineMarkup(o.text, ops[i + 1].text);
+      rows.push(`<div class="diff-del">- ${mark.del}</div>`);
+      rows.push(`<div class="diff-add">+ ${mark.add}</div>`);
+      i++;
+      continue;
+    }
+    if (o.op === "del") rows.push(`<div class="diff-del">- ${esc(o.text)}</div>`);
+    if (o.op === "add") rows.push(`<div class="diff-add">+ ${esc(o.text)}</div>`);
+  }
+  if (!rows.length) return `<p class="meta">Keine Textänderung.</p>`;
+  return `<div class="codediff">${rows.join("")}</div>`;
 }
 
 function snippetForParam(oldT, newT, key, from, to) {
-  const oldNeedle = fmtDe(key, from);
-  const newNeedle = fmtDe(key, to);
-  const oldLine = splitLines(oldT).find((ln) => ln.includes(oldNeedle) || (from != null && ln.includes(String(from).replace(".", ","))));
-  const newLine = splitLines(newT).find((ln) => ln.includes(newNeedle) || (to != null && ln.includes(String(to).replace(".", ","))));
-  if (!oldLine && !newLine) return "";
+  const needle = (v) => fmt(key, v);
+  const oldLine = splitLines(oldT).find((ln) => ln.includes(needle(from)) || (from != null && ln.includes(String(from).replace(".", ","))));
+  const newLine = splitLines(newT).find((ln) => ln.includes(needle(to)) || (to != null && ln.includes(String(to).replace(".", ","))));
   if (oldLine && newLine && oldLine !== newLine) {
     const mark = inlineMarkup(oldLine, newLine);
-    return `<div class="codediff mini">
-      <div class="diff-del">- ${mark.del}</div>
-      <div class="diff-add">+ ${mark.add}</div>
-    </div>`;
+    return `<div class="codediff"><div class="diff-del">- ${mark.del}</div><div class="diff-add">+ ${mark.add}</div></div>`;
   }
-  if (oldLine && !newLine) return `<div class="codediff mini"><div class="diff-del">- ${esc(oldLine)}</div></div>`;
-  if (newLine && !oldLine) return `<div class="codediff mini"><div class="diff-add">+ ${esc(newLine)}</div></div>`;
   return "";
 }
 
-/* views */
-$$("nav button").forEach((b) => {
-  b.onclick = () => show(b.dataset.view);
-});
-function show(name) {
-  $$("nav button").forEach((x) => x.classList.toggle("on", x.dataset.view === name));
-  $$(".view").forEach((v) => v.classList.toggle("on", v.id === "view-" + name));
-  if (name === "queue") renderQueue();
-  if (name === "sources") renderSources();
-  if (name === "versions") renderVersions();
-  if (name === "demo") renderDemo();
-}
-
-$("#banner").textContent = D.banner;
-
-/* search */
-$("#quick").innerHTML = ["Zürich", "Wien", "München", "Berlin", "Musterhausen"]
-  .map((n) => `<button type="button">${n}</button>`)
-  .join("");
-$$("#quick button").forEach((b) => (b.onclick = () => loadPack(b.textContent)));
-
-function norm(s) {
-  return (s || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/[^a-z]/g, "");
-}
-function searchPlaces(q) {
-  const n = norm(q);
-  if (n.length < 2) return [];
-  return D.places.filter((p) => norm(p.name).includes(n) || (p.slug && p.slug.includes(n)));
-}
-$("#q").addEventListener("input", () => {
-  const hits = searchPlaces($("#q").value);
-  $("#suggest").innerHTML = hits
-    .map((h) => `<button data-name="${h.name}">${h.name} <span class="meta">${h.country}-${h.region}</span></button>`)
-    .join("");
-  $$("#suggest button").forEach((b) => (b.onclick = () => loadPack(b.dataset.name)));
-});
-$("#q").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    const first = $("#suggest button");
-    if (first) loadPack(first.dataset.name);
-  }
-});
-
-function placeSlug(name) {
-  const p = D.places.find((x) => x.name === name) || D.places.find((x) => norm(x.name) === norm(name));
-  return p && p.slug;
-}
-
-function loadPack(name) {
-  $("#q").value = name;
-  $("#suggest").innerHTML = "";
-  const slug = placeSlug(name);
-  const pack = slug && D.packs[slug];
-  const el = $("#pack");
-  if (!pack) {
-    el.innerHTML = `<p class="empty">${name} ist auf der Karte, hat in dieser Demo aber noch kein Pack. Nimm Zürich, Wien, München, Berlin oder Musterhausen.</p>`;
-    return;
-  }
-  if (slug === "musterhausen") applyMusterhausenOverlay(pack);
-  const headlines = [];
-  const seen = new Set();
-  for (const l of pack.stack) {
-    for (const h of l.headlines || []) {
-      if (!seen.has(h.key)) {
-        seen.add(h.key);
-        headlines.push(h);
-      }
-    }
-  }
-  const json = JSON.stringify(pack, null, 2);
-  const blob = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-  el.innerHTML = `
-    <div class="card">
-      <a class="json-dl btn" href="${blob}" download="${slug}.pack.json">JSON-Pack</a>
-      <div class="layer">${pack.place.country} · ${pack.place.region}</div>
-      <h3>${pack.place.name}</h3>
-      <p class="meta">${pack.stack.filter((s) => s.has_extract).length} Extrakte · Showcase-Daten, nicht live gezogen</p>
-      <div class="chips">${headlines.map((h) => `<span class="chip">${h.key.replaceAll("_", " ")}: <b>${h.value}${h.unit ? " " + h.unit : ""}</b></span>`).join("")}</div>
-    </div>
-    <div class="stack" style="margin-top:16px">${pack.stack.map(layerCard).join("")}</div>`;
-}
-
-function applyMusterhausenOverlay(pack) {
-  const layer = pack.stack.find((l) => l.source.id === "demo-musterhausen-baumschutz");
-  if (!layer || !layer.extract) return;
-  const p = state.approvedParams;
-  const set = (key, value, unit) => {
-    for (const r of layer.extract.rules) {
-      for (const x of r.parameters) {
-        if (x.key === key && value != null) {
-          x.value = value;
-          x.unit = unit || x.unit;
-        }
-      }
-    }
-    const h = (layer.headlines || []).find((x) => x.key === key);
-    if (h && value != null) h.value = value;
+function exportPack(params, version) {
+  return {
+    place: { name: "Musterhausen", country: "DE", region: "BY" },
+    version,
+    source: "Gemeinde Musterhausen — Baumschutzverordnung (Demo)",
+    parameters: {
+      stem_circumference_threshold_cm: params.stem_circumference_threshold_cm,
+      measure_height_m: params.measure_height_m,
+      protection_zone_drip_line_offset_m: params.protection_zone_drip_line_offset_m,
+      columnar_extra_offset_m: params.columnar_extra_offset_m,
+      fence_min_height_m: params.fence_min_height_m,
+      excavation_min_distance_m: params.excavation_min_distance_m,
+      excavation_distance_stem_circumference_factor: params.excavation_distance_stem_circumference_factor,
+      replacement_ratio: params.replacement_ratio,
+      felling_permit_required: params.felling_permit_required,
+      fine_max_eur: params.fine_max_eur,
+    },
+    bim: {
+      clashOffsetFromCrown_m: params.protection_zone_drip_line_offset_m,
+      permitFromStemCircumference_cm: params.stem_circumference_threshold_cm,
+      fenceHeight_m: params.fence_min_height_m,
+      replacementRatio: params.replacement_ratio,
+    },
   };
-  set("stem_circumference_threshold_cm", p.stem_circumference_threshold_cm, "cm");
-  set("protection_zone_drip_line_offset_m", p.protection_zone_drip_line_offset_m, "m");
-  set("fence_min_height_m", p.fence_min_height_m, "m");
-  set("replacement_ratio", p.replacement_ratio);
-  layer.extract.version = state.version;
 }
 
-function layerCard(layer) {
-  const s = layer.source;
-  const j = s.jurisdiction || {};
-  const ex = layer.extract;
-  if (!ex) {
-    return `<div class="card"><div class="layer">${j.level || ""} · Katalog</div><h3>${s.title}</h3>
-      <p class="meta">${s.paywalled ? "Paywalled — nur zitiert" : "In dieser Demo nicht extrahiert"}</p></div>`;
+function pretty(obj) {
+  return JSON.stringify(obj, null, 2);
+}
+
+function chips(params) {
+  const keys = [
+    "stem_circumference_threshold_cm",
+    "protection_zone_drip_line_offset_m",
+    "fence_min_height_m",
+    "replacement_ratio",
+  ];
+  const labels = {
+    stem_circumference_threshold_cm: "Fällschwelle",
+    protection_zone_drip_line_offset_m: "Schutzabstand",
+    fence_min_height_m: "Zaun",
+    replacement_ratio: "Ersatz",
+  };
+  return keys
+    .map((k) => `<span class="chip">${labels[k]}: <b>${fmt(k, params[k])}</b></span>`)
+    .join("");
+}
+
+function load() {
+  const v1 = parseParams(D.ordinance.text);
+  const fresh = {
+    step: 1,
+    lawChanged: false,
+    approved: false,
+    scanning: false,
+    v1,
+    v2: null,
+    oldText: D.ordinance.text,
+    newText: D.ordinance.text,
+  };
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE) || "null");
+    return s && s.step ? s : fresh;
+  } catch {
+    return fresh;
   }
-  const rules = (ex.rules || [])
+}
+
+const state = load();
+function save() {
+  localStorage.setItem(STORE, JSON.stringify(state));
+}
+
+function go(step) {
+  state.step = step;
+  save();
+  render();
+}
+
+function highlightLaw(text, changed) {
+  if (!changed) return esc(text);
+  return esc(text)
+    .replace("70 cm", '<span class="hl">70 cm</span>')
+    .replace("2,0 m", '<span class="hl">2,0 m</span>')
+    .replace("2,5 m Höhe", '<span class="hl">2,5 m</span> Höhe')
+    .replace("2:1", '<span class="hl">2:1</span>');
+}
+
+function renderSteps() {
+  document.getElementById("steps").innerHTML = STEPS.map(
+    (s) => `<li class="${s.id === state.step ? "on" : s.id < state.step ? "done" : ""}">${s.label}</li>`
+  ).join("");
+}
+
+function render() {
+  renderSteps();
+  const html = ({ 1: step1, 2: step2, 3: step3, 4: step4, 5: step5 }[state.step] || step1)();
+  $app.innerHTML = html;
+  bind();
+}
+
+function step1() {
+  return `
+    <p class="meta">4 Klicks · keine Anmeldung · nichts wird im Internet abgefragt</p>
+    <h1>Aus Gesetzestext werden Zahlen für BIM.</h1>
+    <p class="lead">BimParts braucht Parameter (Fällschwelle, Schutzradius, Ersatzquote). Die stehen heute in PDFs. Dieser Prototyp zeigt den Ablauf: Text ändert sich → jemand prüft den Diff → das JSON-Pack für den Ort ändert sich.</p>
+    <div class="cities">
+      <div class="city"><b>Zürich</b>Fällung ab 100 cm</div>
+      <div class="city"><b>Wien</b>Fällung ab 40 cm</div>
+      <div class="city"><b>München</b>Fällung ab 60 cm</div>
+      <div class="city"><b>Musterhausen</b>Demo-Ort, du änderst ihn</div>
+    </div>
+    <div class="nav">
+      <button class="btn primary" data-go="2">1 · JSON von heute ansehen</button>
+    </div>`;
+}
+
+function step2() {
+  const json = pretty(exportPack(state.v1, 1));
+  return `
+    <h1>So sieht das JSON heute aus.</h1>
+    <p class="lead">Musterhausen, Version 1. Das wäre der Export, den BimTree / REGISA einlesen könnte. Merke dir die vier Zahlen.</p>
+    <div class="row">${chips(state.v1)}</div>
+    <div class="card">
+      <div class="json-head"><h2>musterhausen.v1.json</h2>
+        <a class="btn secondary" id="dl-v1" href="#">Download</a></div>
+      <pre class="json-pane">${esc(json)}</pre>
+    </div>
+    <p class="hint">Als Nächstes ändern wir die Verordnung. Dann vergleichen wir genau dieses JSON mit der neuen Fassung — rot / grün.</p>
+    <div class="nav">
+      <button class="btn secondary" data-go="1">Zurück</button>
+      <button class="btn primary" data-go="3">2 · Verordnung ändern</button>
+    </div>`;
+}
+
+function step3() {
+  const text = state.lawChanged ? D.scriptedNovelle.text : D.ordinance.text;
+  return `
+    <h1>Die Gemeinde ändert vier Zahlen.</h1>
+    <p class="lead">${state.lawChanged
+      ? "Die Novelle steht im Text (gelb markiert). Als Nächstes simulieren wir den Abgleich — wie «Aktualisieren» in der echten Wissensbasis."
+      : "Ein Klick spielt eine Beispiel-Novelle ein. Du musst nichts selbst tippen."}</p>
+    <div class="card">
+      <p class="meta">Gemeinde Musterhausen — Baumschutzverordnung</p>
+      <div class="law">${highlightLaw(text, state.lawChanged)}</div>
+    </div>
+    ${state.lawChanged ? `<div class="row">${chips(parseParams(text))}</div>` : ""}
+    <div class="nav">
+      <button class="btn secondary" data-go="2">Zurück</button>
+      ${state.lawChanged
+        ? `<button class="btn primary" id="btn-scan">3 · Änderungen prüfen</button>`
+        : `<button class="btn primary" id="btn-novelle">Diese 4 Zahlen ändern</button>`}
+    </div>
+    <div id="scan-status"></div>`;
+}
+
+function step4() {
+  const oldT = state.oldText;
+  const newT = state.newText;
+  const diff = paramDiff(state.v1, parseParams(newT));
+  const params = diff
     .map(
-      (r) => `<div class="rule"><strong>${r.title || r.id}</strong>
-        <span class="meta"> · ${r.legal_locator || ""}</span>
-        <div class="chips">${(r.parameters || []).map((p) => `<span class="chip">${p.key.replaceAll("_", " ")}: <b>${p.value}${p.unit ? " " + p.unit : ""}</b></span>`).join("")}</div>
-        ${(r.parameters || []).filter((p) => p.raw_quote).slice(0, 1).map((p) => `<p class="quote">«${p.raw_quote}»</p>`).join("")}
+      (d) => `<div class="param-change">
+        <div class="diff-row"><div class="from">${esc(d.key.replaceAll("_", " "))}: ${esc(fmt(d.key, d.from))}</div>
+        <div class="to">${esc(fmt(d.key, d.to))}</div></div>
+        ${snippetForParam(oldT, newT, d.key, d.from, d.to)}
       </div>`
     )
     .join("");
-  return `<div class="card">
-    <div class="layer">${j.level || ""} · ${s.type || ""}</div>
-    <h3>${s.title}</h3>
-    <p class="meta">v${ex.version || 1}</p>
-    <div class="chips">${(layer.headlines || []).map((h) => `<span class="chip">${h.key.replaceAll("_", " ")}: <b>${h.value}${h.unit ? " " + h.unit : ""}</b></span>`).join("")}</div>
-    <div class="rules">${rules}</div>
-  </div>`;
+  return `
+    <h1>Prüfen, dann freigeben.</h1>
+    <p class="lead">Rot ist der alte Text, grün der neue — direkt aus der Verordnung. Nichts wird current, bevor du freigibst.</p>
+    <div class="card">
+      <p class="meta">Dokument-Diff</p>
+      ${renderCodediff(oldT, newT)}
+    </div>
+    <div class="card">
+      <p class="meta">Parameter, die ins JSON wandern</p>
+      ${params}
+    </div>
+    <div class="nav">
+      <button class="btn secondary" data-go="3">Zurück</button>
+      <button class="btn primary" id="btn-approve">4 · Freigeben und JSON vergleichen</button>
+    </div>`;
 }
 
-function initMap() {
-  const map = L.map("map", { scrollWheelZoom: false }).setView([48.2, 11.5], 5);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OSM" }).addTo(map);
-  D.places.forEach((p) => {
-    if (p.lat == null) return;
-    const has = !!D.packs[p.slug];
-    const m = L.circleMarker([p.lat, p.lon], {
-      radius: p.demo || p.slug === "musterhausen" ? 8 : 6,
-      color: p.slug === "musterhausen" ? "#b5683a" : has ? "#2f5d45" : "#8aa090",
-      fillOpacity: 0.85,
-    }).addTo(map);
-    m.bindTooltip(p.name);
-    m.on("click", () => loadPack(p.name));
-  });
+function step5() {
+  const before = pretty(exportPack(state.v1, 1));
+  const after = pretty(exportPack(state.v2 || parseParams(state.newText), 2));
+  return `
+    <h1>Das ist der Unterschied im JSON.</h1>
+    <p class="lead">Gleicher Export, neue Version. Rot = weg, grün = neu. Das ist die Datei, die BimParts verwenden würde.</p>
+    <div class="row">${chips(state.v2 || parseParams(state.newText))}</div>
+    <div class="card">
+      <div class="json-head">
+        <h2>musterhausen.json — v1 → v2</h2>
+        <a class="btn secondary" id="dl-v2" href="#">Download v2</a>
+      </div>
+      ${renderCodediff(before, after)}
+    </div>
+    <p class="hint">Das ist der ganze Loop: unstrukturierter Text → geprüfte Parameter → versioniertes JSON. In Produktion käme der Text von echten Erlassen; die Prüfung bleibt menschlich.</p>
+    <div class="nav">
+      <button class="btn secondary" data-go="4">Zurück zur Prüfung</button>
+      <button class="btn primary" id="btn-reset-end">Nochmal von vorn</button>
+    </div>`;
 }
 
-function renderDemo() {
-  $("#ordinance").value = state.ordinanceText;
-  $("#ord-meta").textContent = `Aktuell genehmigt: v${state.version} · Hash ${hashText(state.ordinanceText)}`;
-}
-$("#ordinance") && null;
-document.addEventListener("input", (e) => {
-  if (e.target.id === "ordinance") {
-    state.ordinanceText = e.target.value;
-    save();
+function bind() {
+  $app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(+b.dataset.go)));
+  const nov = document.getElementById("btn-novelle");
+  if (nov) {
+    nov.onclick = () => {
+      state.lawChanged = true;
+      state.newText = D.scriptedNovelle.text;
+      save();
+      render();
+    };
   }
-});
-$("#btn-novelle").onclick = () => {
-  $("#ordinance").value = D.scriptedNovelle.text;
-  state.ordinanceText = D.scriptedNovelle.text;
-  save();
-  renderDemo();
-  $("#update-status").textContent = "Novelle im Editor. Jetzt «Aktualisieren».";
-};
-$("#btn-reset").onclick = () => {
+  const scan = document.getElementById("btn-scan");
+  if (scan) {
+    scan.onclick = runScan;
+  }
+  const ap = document.getElementById("btn-approve");
+  if (ap) {
+    ap.onclick = () => {
+      state.approved = true;
+      state.v2 = parseParams(state.newText);
+      go(5);
+    };
+  }
+  const r1 = document.getElementById("btn-reset-end");
+  if (r1) r1.onclick = reset;
+  const dl1 = document.getElementById("dl-v1");
+  if (dl1) bindDownload(dl1, exportPack(state.v1, 1), "musterhausen.v1.json");
+  const dl2 = document.getElementById("dl-v2");
+  if (dl2) bindDownload(dl2, exportPack(state.v2 || parseParams(state.newText), 2), "musterhausen.v2.json");
+}
+
+function bindDownload(a, obj, name) {
+  const blob = new Blob([pretty(obj)], { type: "application/json" });
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+}
+
+async function runScan() {
+  const box = document.getElementById("scan-status");
+  const names = ["Katalog", "Musterhausen v1", "Neuer Text", "Parameter ziehen"];
+  box.innerHTML = `<div class="card"><p class="meta">Simulation</p><div class="progress"><i></i></div><p id="scan-line">…</p></div>`;
+  const bar = box.querySelector("i");
+  const line = document.getElementById("scan-line");
+  for (let i = 0; i < names.length; i++) {
+    bar.style.width = ((i + 1) / names.length) * 100 + "%";
+    line.textContent = `${i + 1}/${names.length} · ${names[i]}`;
+    await new Promise((r) => setTimeout(r, 280));
+  }
+  go(4);
+}
+
+function reset() {
   localStorage.removeItem(STORE);
   location.reload();
-};
-
-function renderQueue() {
-  $("#badge-queue").textContent = state.proposals.length;
-  const box = $("#queue");
-  if (!state.proposals.length) {
-    box.innerHTML = `<p class="empty">Keine offenen Vorschläge. In der Demo-Verordnung Zahlen ändern (oder Novelle einspielen) und Aktualisieren.</p>`;
-    return;
-  }
-  box.innerHTML = state.proposals
-    .map((p, i) => {
-      const oldT = p.oldText || state.approvedText || D.ordinance.text;
-      const newT = p.newText || state.ordinanceText;
-      const diffs = (p.diff || [])
-        .map((d) => `<div class="param-change">
-          <div class="diff-row"><div class="from">${esc(d.key.replaceAll("_", " "))}: ${esc(fmt(d.key, d.from))}</div><div class="to">${esc(fmt(d.key, d.to))}</div></div>
-          ${snippetForParam(oldT, newT, d.key, d.from, d.to)}
-        </div>`)
-        .join("");
-      return `<div class="card">
-        <div class="layer">Simulierter Vorschlag · ${p.source_id}</div>
-        <h3>${p.title}</h3>
-        <p>${esc(p.summary)}</p>
-        <p class="layer" style="margin-top:16px">Dokument</p>
-        ${renderCodediff(oldT, newT)}
-        <p class="layer" style="margin-top:16px">Parameter</p>
-        ${diffs}
-        <p class="meta">${esc(p.bim)}</p>
-        <div class="actions">
-          <button class="btn ok" data-approve="${i}">Freigeben</button>
-          <button class="btn bad" data-reject="${i}">Ablehnen</button>
-        </div>
-      </div>`;
-    })
-    .join("");
-  $$("[data-approve]").forEach((b) => (b.onclick = () => approve(+b.dataset.approve)));
-  $$("[data-reject]").forEach((b) => (b.onclick = () => reject(+b.dataset.reject)));
 }
 
-function approve(i) {
-  const p = state.proposals[i];
-  if (!p) return;
-  state.version += 1;
-  state.approvedParams = p.params;
-  if (p.newText) state.approvedText = p.newText;
-  state.versions.push({
-    n: state.version,
-    at: new Date().toISOString(),
-    params: p.params,
-    text: p.newText || state.approvedText,
-    note: p.summary,
-  });
-  state.changelog.unshift({ at: new Date().toISOString(), type: "approve", note: `v${state.version} Musterhausen` });
-  state.proposals.splice(i, 1);
-  save();
-  renderQueue();
-  $("#update-status").textContent = `v${state.version} ist current. Ort Musterhausen neu laden.`;
-}
-
-function reject(i) {
-  const p = state.proposals[i];
-  state.changelog.unshift({ at: new Date().toISOString(), type: "reject", note: p && p.title });
-  state.proposals.splice(i, 1);
-  save();
-  renderQueue();
-}
-
-function renderSources() {
-  const country = $("#f-country").value;
-  const q = ($("#f-q").value || "").toLowerCase();
-  const rows = D.sources.filter((s) => {
-    if (country && s.country !== country) return false;
-    if (q && !(s.title || "").toLowerCase().includes(q) && !s.id.includes(q)) return false;
-    return true;
-  });
-  $("#sources").innerHTML = `<p class="meta">${rows.length} Katalogeinträge (statisch)</p>
-    <table><thead><tr><th>ID</th><th>Titel</th><th>Land</th><th>Ebene</th><th>Status</th><th>Extrakt</th></tr></thead>
-    <tbody>${rows
-      .map(
-        (s) => `<tr><td><code>${s.id}</code></td><td>${s.title}</td><td>${s.country || ""}</td>
-        <td>${s.level || ""}</td><td>${s.status}</td><td>${s.has_extract ? "ja" : "—"}</td></tr>`
-      )
-      .join("")}</tbody></table>`;
-}
-["f-country", "f-q"].forEach((id) => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener("input", renderSources);
-  if (el && el.tagName === "SELECT") el.addEventListener("change", renderSources);
-});
-
-function renderVersions() {
-  const rows = [...state.versions].reverse();
-  $("#changelog").innerHTML = rows
-    .map((v) => {
-      const prev = state.versions.find((x) => x.n === v.n - 1);
-      const diffs = prev
-        ? paramDiff(prev.params, v.params)
-            .map((d) => `<div class="param-change">
-              <div class="diff-row"><div class="from">${esc(fmt(d.key, d.from))}</div><div class="to">${esc(fmt(d.key, d.to))}</div></div>
-              ${prev.text && v.text ? snippetForParam(prev.text, v.text, d.key, d.from, d.to) : ""}
-            </div>`)
-            .join("")
-        : "";
-      const doc = prev && prev.text && v.text ? renderCodediff(prev.text, v.text) : "";
-      return `<div class="card"><div class="layer">v${v.n}</div><h3>${esc(v.note || "")}</h3>
-        <p class="meta">${esc(v.at)}</p>${doc}${diffs}</div>`;
-    })
-    .join("");
-}
-
-const FAKE_SCAN = [
-  "CH NHG",
-  "VSSG Merkblatt",
-  "Zürich BZO Baumerhalt",
-  "BNatSchG § 39",
-  "München BaumschutzV",
-  "Berlin BaumSchVO",
-  "Wien Baumschutzgesetz",
-  "Musterhausen (Demo)",
-];
-
-async function runUpdate() {
-  const st = $("#update-status");
-  st.innerHTML = `<div class="progress"><i></i></div>Simulation startet…`;
-  const bar = st.querySelector("i");
-  for (let i = 0; i < FAKE_SCAN.length; i++) {
-    await new Promise((r) => setTimeout(r, 180 + Math.random() * 120));
-    bar.style.width = ((i + 1) / FAKE_SCAN.length) * 100 + "%";
-    st.lastChild && (st.childNodes[1].textContent = "");
-    st.append(` ${i + 1}/${FAKE_SCAN.length} · ${FAKE_SCAN[i]}`);
-    st.innerHTML = `<div class="progress"><i style="width:${((i + 1) / FAKE_SCAN.length) * 100}%"></i></div>${i + 1}/${FAKE_SCAN.length} · ${FAKE_SCAN[i]}`;
-  }
-  const next = parseParams(state.ordinanceText);
-  const diff = paramDiff(state.approvedParams, next);
-  if (!diff.length) {
-    st.textContent = "Fertig. Keine Änderung gegenüber der genehmigten Fassung.";
-    state.changelog.unshift({ at: new Date().toISOString(), type: "update", note: "keine Änderung" });
-    save();
-    return;
-  }
-  const summary = diff.map((d) => `${d.key.replaceAll("_", " ")}: ${fmt(d.key, d.from)} → ${fmt(d.key, d.to)}`).join("; ");
-  const bim =
-    "BimTree/REGISA: " +
-    diff
-      .map((d) => {
-        if (d.key === "protection_zone_drip_line_offset_m") return `Clash-Radius = Kronentraufe + ${d.to} m`;
-        if (d.key === "stem_circumference_threshold_cm") return `Permit-Flag ab ${d.to} cm Stammumfang`;
-        if (d.key === "fence_min_height_m") return `Schutzzaun mind. ${d.to} m`;
-        if (d.key === "replacement_ratio") return `Ersatz ${fmt(d.key, d.to)}`;
-        return `${d.key} anpassen`;
-      })
-      .join("; ") +
-    ".";
-  state.proposals = [
-    {
-      source_id: "demo-musterhausen-baumschutz",
-      title: "Musterhausen — simulierte Novelle",
-      summary,
-      bim,
-      diff,
-      params: next,
-      oldText: state.approvedText || D.ordinance.text,
-      newText: state.ordinanceText,
-    },
-  ];
-  state.changelog.unshift({ at: new Date().toISOString(), type: "proposal", note: summary });
-  save();
-  $("#badge-queue").textContent = "1";
-  st.textContent = "Änderung erkannt. Vorschlag liegt unter Prüfen.";
-  show("queue");
-}
-
-$("#btn-update").onclick = runUpdate;
-$("#badge-queue").textContent = state.proposals.length;
-
-initMap();
-loadPack("Zürich");
-renderDemo();
+document.getElementById("btn-reset").onclick = reset;
+render();
