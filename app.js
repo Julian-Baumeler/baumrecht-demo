@@ -256,24 +256,49 @@ function renderSteps() {
 
 function render() {
   renderSteps();
+  if (mapRef) {
+    mapRef.remove();
+    mapRef = null;
+  }
   const html = ({ 1: step1, 2: step2, 3: step3, 4: step4, 5: step5 }[state.step] || step1)();
   $app.innerHTML = html;
   bind();
 }
 
 function step1() {
+  const st = D.stats || {};
   return `
-    <p class="meta">4 Klicks · keine Anmeldung · nichts wird im Internet abgefragt</p>
     <h1>Aus Gesetzestext werden Zahlen für BIM.</h1>
-    <p class="lead">BimParts braucht Parameter (Fällschwelle, Schutzradius, Ersatzquote). Die stehen heute in PDFs. Dieser Prototyp zeigt den Ablauf: Text ändert sich → jemand prüft den Diff → das JSON-Pack für den Ort ändert sich.</p>
+    <p class="lead">BimParts braucht Parameter (Fällschwelle, Schutzradius, Ersatzquote). Die stehen heute in PDFs über DE, CH und AT. Unten der Katalog, den wir schon gesammelt haben — danach der Ablauf an einem Demo-Ort.</p>
+    <div class="stats">
+      <span><b>${st.sources || 0}</b> Quellen</span>
+      <span><b>${st.DE || 0}</b> DE</span>
+      <span><b>${st.CH || 0}</b> CH</span>
+      <span><b>${st.AT || 0}</b> AT</span>
+      <span><b>${st.active || 0}</b> öffentlich</span>
+      <span><b>${st.paywalled || 0}</b> Paywall-Normen</span>
+    </div>
     <div class="cities">
       <div class="city"><b>Zürich</b>Fällung ab 100 cm</div>
       <div class="city"><b>Wien</b>Fällung ab 40 cm</div>
       <div class="city"><b>München</b>Fällung ab 60 cm</div>
       <div class="city"><b>Musterhausen</b>Demo-Ort, du änderst ihn</div>
     </div>
+    <div id="map"></div>
+    <p class="hint">Punkte = erfasste Orte und Regionen. Blau gefüllt = fertiges JSON-Pack in dieser Demo.</p>
+    <div class="card">
+      <h2>Quellenkatalog</h2>
+      <p class="meta">Gesammelt, nicht live abgefragt. Filter ändert nur die Tabelle.</p>
+      <div class="filters" id="src-filters">
+        <button type="button" data-cc="all" class="on">Alle</button>
+        <button type="button" data-cc="DE">DE</button>
+        <button type="button" data-cc="CH">CH</button>
+        <button type="button" data-cc="AT">AT</button>
+      </div>
+      <div id="src-table"></div>
+    </div>
     <div class="nav">
-      <button class="btn primary" data-go="2">1 · JSON von heute ansehen</button>
+      <button class="btn primary" data-go="2">Weiter: JSON von heute ansehen</button>
     </div>`;
 }
 
@@ -367,8 +392,85 @@ function step5() {
     </div>`;
 }
 
+const STATUS_DE = {
+  active: "öffentlich",
+  paywalled: "Paywall",
+  "known-unfetched": "katalogisiert",
+  fetch_error: "Fehler",
+  demo: "Demo",
+};
+const LEVEL_DE = {
+  country: "Bund",
+  state: "Land / Kanton",
+  municipality: "Gemeinde",
+  standard: "Norm",
+  guideline: "Merkblatt",
+};
+
+let mapRef = null;
+let sourceCountry = "all";
+
+function renderSourceTable() {
+  const box = document.getElementById("src-table");
+  if (!box) return;
+  const rows = (D.sources || []).filter((s) => sourceCountry === "all" || s.country === sourceCountry);
+  box.innerHTML = `<p class="meta">${rows.length} Einträge</p>
+    <table class="src-table"><thead><tr>
+      <th>Land</th><th>Ebene</th><th>Titel</th><th>Status</th>
+    </tr></thead><tbody>${rows
+      .map((s) => {
+        const title = s.url
+          ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.id)}</a>`
+          : esc(s.title || s.id);
+        return `<tr>
+          <td>${esc(s.country || "")}${s.region ? " · " + esc(s.region) : ""}</td>
+          <td>${esc(LEVEL_DE[s.level] || s.level || "")}</td>
+          <td>${title}</td>
+          <td class="status-pill">${esc(STATUS_DE[s.status] || s.status || "")}</td>
+        </tr>`;
+      })
+      .join("")}</tbody></table>`;
+}
+
+function initMap() {
+  const el = document.getElementById("map");
+  if (!el || typeof L === "undefined") return;
+  if (mapRef) {
+    mapRef.remove();
+    mapRef = null;
+  }
+  mapRef = L.map(el, { scrollWheelZoom: false }).setView([48.9, 10.8], 5);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    attribution: "&copy; OSM · CARTO",
+  }).addTo(mapRef);
+  (D.mapPoints || []).forEach((p) => {
+    const filled = p.pack;
+    L.circleMarker([p.lat, p.lon], {
+      radius: filled ? 8 : p.kind === "city" ? 5 : 4,
+      color: "#0060e6",
+      weight: filled ? 2 : 1,
+      fillColor: filled ? "#0060e6" : "#fff",
+      fillOpacity: filled ? 0.9 : 1,
+    })
+      .addTo(mapRef)
+      .bindTooltip(`${p.name} (${p.country})`);
+  });
+  setTimeout(() => mapRef && mapRef.invalidateSize(), 80);
+}
+
 function bind() {
   $app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(+b.dataset.go)));
+  if (document.getElementById("map")) {
+    initMap();
+    renderSourceTable();
+    document.querySelectorAll("#src-filters button").forEach((b) => {
+      b.onclick = () => {
+        sourceCountry = b.dataset.cc;
+        document.querySelectorAll("#src-filters button").forEach((x) => x.classList.toggle("on", x === b));
+        renderSourceTable();
+      };
+    });
+  }
   const nov = document.getElementById("btn-novelle");
   if (nov) {
     nov.onclick = () => {
