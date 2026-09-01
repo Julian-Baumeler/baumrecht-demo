@@ -286,9 +286,12 @@ function step1() {
     </div>
     <div id="map"></div>
     <p class="hint">Punkte = erfasste Orte und Regionen. Blau gefüllt = fertiges JSON-Pack in dieser Demo.</p>
+    <div class="nav sticky-nav">
+      <button class="btn primary" data-go="2">Weiter: JSON von heute ansehen</button>
+    </div>
     <div class="card">
       <h2>Quellenkatalog</h2>
-      <p class="meta">Gesammelt, nicht live abgefragt. Filter ändert nur die Tabelle.</p>
+      <p class="meta">Gesammelt, nicht live abgefragt. Zum Weitergehen brauchst du die Tabelle nicht — sie zeigt nur den Stand.</p>
       <div class="filters" id="src-filters">
         <button type="button" data-cc="all" class="on">Alle</button>
         <button type="button" data-cc="DE">DE</button>
@@ -296,9 +299,6 @@ function step1() {
         <button type="button" data-cc="AT">AT</button>
       </div>
       <div id="src-table"></div>
-    </div>
-    <div class="nav">
-      <button class="btn primary" data-go="2">Weiter: JSON von heute ansehen</button>
     </div>`;
 }
 
