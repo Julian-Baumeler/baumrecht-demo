@@ -110,6 +110,40 @@ th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line
 .diff-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0; }
 .from { color: var(--warn); }
 .to { color: var(--ok); }
+.param-change { margin: 12px 0 16px; }
+.codediff {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.45;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 8px 0 4px;
+  background: #fbfaf6;
+}
+.codediff.mini { margin-top: 6px; }
+.diff-hunk + .diff-hunk { border-top: 1px dashed var(--line); }
+.diff-ctx, .diff-del, .diff-add {
+  padding: 3px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-ctx { color: #6b6b63; background: #f4f1ea; }
+.diff-del { background: #fdecea; color: #7a241c; }
+.diff-add { background: #e7f6ec; color: #1c5c32; }
+.tok-del {
+  background: #f5b7b1;
+  color: #5c120c;
+  border-radius: 2px;
+  padding: 0 2px;
+  text-decoration: none;
+}
+.tok-add {
+  background: #82e0aa;
+  color: #0e3d1f;
+  border-radius: 2px;
+  padding: 0 2px;
+}
 .empty { color: var(--muted); padding: 24px 0; }
 .layer { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--moss); }
 .json-dl { float: right; }
